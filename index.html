@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Document</title>
+    <style>
+        html,body{
+            margin:0px;
+            height:100%;
+            width: 100%;
+        }
+        #map { width: 100%; height: 100%; background-color : #000;}
+    </style>
+</head>
+<script src="js/three.js"></script>
+<script src="js/TrackballControls.js"></script>
+<link type="text/css" rel="stylesheet" href="css/maptalks.css">
+<script type="text/javascript" src="js/maptalks.min.js"></script>
+<script type="text/javascript" src="js/maptalks.three.js"></script>
+
+<script>
+  var camera, scene, renderer,container,controls;
+  window.onload = function() 
+  {
+        let map = new maptalks.Map("map",{
+            center : [13.416935229170008, 52.529564137540376],
+            zoom   :  17,
+            fog : false,
+            maxPitch:60,
+            pitch : 60,
+            centerCross : false,
+            doubleClickZoom : false,
+            attribution : null,
+            baseLayer : new maptalks.TileLayer('tile',{
+                'urlTemplate' : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+                'subdomains'  : ['a','b','c','d']
+            })
+        });
+
+        let threeLayer = new maptalks.ThreeLayer('t', {
+            forceRenderOnMoving : true,
+            forceRenderOnRotating : true
+        }).addTo(map);
+        let planeLoaded = false;
+
+
+        threeLayer.prepareToDraw = function (gl, scene, camera) 
+        {
+            let me = this;
+
+            let light = new THREE.DirectionalLight( 0xffffff );
+
+            light.position.set( 0, 0, 1 );
+
+            scene.add( light );
+
+            let geometry = new THREE.PlaneGeometry( 0, 0,255,255 );
+            
+            let geolen = geometry.vertices.length;
+
+            let textureLoader = new THREE.TextureLoader();
+
+            textureLoader.load( 'img/dem.jpg' ,( texture )=>{
+
+                let material = new THREE.MeshBasicMaterial( { map:texture, transparent: true , side :THREE.DoubleSide , depthTest :true} ) ;
+
+                fetch('data/dem.csv')
+                    .then(function(response) {
+                        return response.text();
+                    })
+                    .then(function(dem) 
+                    {
+                        dem = CSV2Arr(dem);
+
+                        let plane  = new THREE.Mesh( geometry, material );
+                        let geolen = geometry.vertices.length;
+                        for(let i = 0; i<geolen; i++)
+                        {
+                            geometry.vertices[i].z = dem [Math.trunc(i/256)][i%256] / 40 ;
+                        }
+
+                        let v = threeLayer.coordinateToVector3(new maptalks.Coordinate(map.getCenter()));
+                        plane.position.x = v.x;
+                        plane.position.y = v.y;
+                        plane.position.z = v.z;
+                        scene.add( plane );
+                        planeLoaded = true;
+                      
+                    });
+
+            }, undefined,  ( error )=>{
+					console.error( error );
+				} );
+          
+        };
+
+
+        threeLayer.draw = function () 
+        {
+            if (planeLoaded) {
+                this.renderScene();
+            }
+        }
+
+        threeLayer.drawOnInteracting = function () 
+        {
+            if (planeLoaded) {
+                this.renderScene();
+            }
+        }
+                
+
+  }
+
+  function CSV2Arr(data, delimeter) {
+      
+        if (delimeter == undefined)
+            delimeter = ',';
+        if (delimeter && delimeter.length > 1)
+            delimeter = ',';
+
+        var newline = '\n';
+        var eof = '';
+        var i = 0;
+        var c = data.charAt(i);
+        var row = 0;
+        var col = 0;
+        var array = new Array();
+
+        while (c != eof) {
+            while (c == ' ' || c == '\t' || c == '\r') {
+                c = data.charAt(++i); 
+            }
+
+            var value = "";
+            if (c == '\"') {
+                c = data.charAt(++i);
+
+                do {
+                    if (c != '\"') {
+                        value += c;
+                        c = data.charAt(++i);
+                    }
+
+                    if (c == '\"') {
+                        var cnext = data.charAt(i + 1);
+                        if (cnext == '\"') {
+                            value += '\"';
+                            i += 2;
+                            c = data.charAt(i);
+                        }
+                    }
+                }
+                while (c != eof && c != '\"');
+
+                if (c == eof) {
+                    throw "Unexpected end of data, double-quote expected";
+                }
+
+                c = data.charAt(++i);
+            }
+            else {
+            
+                while (c != eof && c != delimeter && c != newline && c != ' ' && c != '\t' && c != '\r') {
+                    value += c;
+                    c = data.charAt(++i);
+                }
+            }
+
+            if (array.length <= row)
+                array.push(new Array());
+            array[row].push(value);
+
+            while (c == ' ' || c == '\t' || c == '\r') {
+                c = data.charAt(++i);
+            }
+
+            if (c == delimeter) {
+                col++;
+            }
+            else if (c == newline) {
+                col = 0;
+                row++;
+            }
+            else if (c != eof) {
+                throw "Delimiter expected after character " + i;
+            }
+            c = data.charAt(++i);
+        }
+
+        return array;
+
+    }
+
+</script>
+
+<body>
+    <div class="heatmap" style="width: 256px;height: 256px;display: none"></div>
+    <div id="map"></div>
+</body>
+</html>
